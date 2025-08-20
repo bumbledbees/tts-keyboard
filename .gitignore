@@ -16,4 +16,5 @@ wheels/
 voices/
 
 # Generated files
+output/
 *.wav

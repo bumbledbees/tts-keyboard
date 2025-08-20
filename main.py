@@ -1,10 +1,12 @@
 import argparse
+import os.path
 import readline  # pylint: disable=W0611  # noqa: F401
 import sys
 import wave
 
 import piper
 import pyaudio
+from sanitize_filename import sanitize
 
 
 def main():
@@ -84,9 +86,16 @@ def loop(voice, stream, config):
             return
         if words.startswith(':s '):
             words = words[3:]
-            fname = words.replace(' ', '_') + '.wav'
+            fname = sanitize(words.replace(' ', '_'))[:64] + '.wav'
+            if os.path.exists(fname):
+                print(f'  File "{fname}" exists.')
+                response = input('  Overwrite? (y/N) ')
+                if response.lower() != 'y':
+                    continue
             with wave.open(fname, 'wb') as outfile:
+                print(f'  Saving audio to "{fname}"...')
                 voice.synthesize_wav(words, outfile, syn_config=config)
+                continue
 
         chunks = voice.synthesize(words, config)
         for chunk in chunks:
