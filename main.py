@@ -9,6 +9,15 @@ import pyaudio
 from sanitize_filename import sanitize
 
 
+class stream:
+    def __init__(self, audio: pyaudio.PyAudio, **kwargs):
+        self.audio = audio
+        self.kwargs = kwargs
+
+    def __enter__(self):
+        return self.audio.open()
+
+
 def main():
     parser = argparse.ArgumentParser(prog='tts-keyboard',
                                      description='simple voice keyboard')
@@ -42,8 +51,15 @@ def main():
     args = parser.parse_args()
 
     voice = piper.PiperVoice.load(args.voice)
+    if args.sample_rate is None:
+        args.sample_rate = voice.config.sample_rate
     audio = pyaudio.PyAudio()
-    stream_kwargs = {}
+    stream_kwargs = {
+        'format': audio.get_format_from_width(2),
+        'channels': 1,
+        'rate': args.sample_rate,
+        'output': True,
+    }
     if args.output_device:
         for n in range(audio.get_device_count()):
             dev_info = audio.get_device_info_by_index(n)
@@ -53,15 +69,7 @@ def main():
             print(f'error: failed to open device {args.output_device}',
                   file=sys.stderr)
             sys.exit(1)
-    if args.sample_rate is None:
-        args.sample_rate = voice.config.sample_rate
-    stream = audio.open(
-        format=audio.get_format_from_width(2),
-        channels=1,
-        rate=args.sample_rate,
-        output=True,
-        **stream_kwargs
-    )
+
     syn_config = piper.SynthesisConfig(
         volume=args.gain,
         length_scale=args.speed,
@@ -80,26 +88,29 @@ def main():
 def loop(voice, stream, config):
     while True:
         words = input('(tts-keyboard) ')
-        if not words:
-            continue
-        if words.lower().startswith(':q'):
-            return
-        if words.startswith(':s '):
-            words = words[3:]
-            fname = sanitize(words.replace(' ', '_'))[:64] + '.wav'
-            if os.path.exists(fname):
-                print(f'  File "{fname}" exists.')
-                response = input('  Overwrite? (y/N) ')
-                if response.lower() != 'y':
-                    continue
-            with wave.open(fname, 'wb') as outfile:
-                print(f'  Saving audio to "{fname}"...')
-                voice.synthesize_wav(words, outfile, syn_config=config)
+        try:
+            if not words:
                 continue
+            if words.lower().startswith(':q'):
+                return
+            if words.startswith(':s '):
+                words = words[3:]
+                fname = sanitize(words.replace(' ', '_'))[:64] + '.wav'
+                if os.path.exists(fname):
+                    print(f'  File "{fname}" exists.')
+                    response = input('  Overwrite? (y/N) ')
+                    if response.lower() != 'y':
+                        continue
+                with wave.open(fname, 'wb') as outfile:
+                    print(f'  Saving audio to "{fname}"...')
+                    voice.synthesize_wav(words, outfile, syn_config=config)
+                    continue
 
-        chunks = voice.synthesize(words, config)
-        for chunk in chunks:
-            stream.write(chunk.audio_int16_bytes)
+            chunks = voice.synthesize(words, config)
+            for chunk in chunks:
+                stream.write(chunk.audio_int16_bytes)
+        except KeyboardInterrupt:
+            continue
 
 
 if __name__ == "__main__":
